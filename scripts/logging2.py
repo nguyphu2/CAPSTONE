@@ -1,6 +1,7 @@
 import time
 import serial
 import os
+import csv
 
 port = '/dev/serial/by-id/usb-Arduino__www.arduino.cc__0043_44231313430351119231-if00'
 baud = 115200
@@ -12,7 +13,7 @@ os.makedirs(log_dir, exist_ok=True)
 
 # Create a unique log file name with start date/time
 start_time_str = time.strftime("%m.%d.%y-%H.%M")  # e.g., 11.06.25-14.05
-log_file = os.path.join(log_dir, f"{start_time_str}.log")
+log_file = os.path.join(log_dir, f"{start_time_str}.csv")
 
 ###############################################################
 def loop(now, match_yolo, stop_event):
@@ -34,15 +35,26 @@ def loop(now, match_yolo, stop_event):
     
     print(f"[Arduino] Logging to: {log_file}")
     
-    # Write header to log file
+    # Write CSV header
     try:
-        with open(log_file, "a") as f:
-            f.write("=" * 80 + "\n")
-            f.write(f"Sensor logging started: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("Format: [Timestamp] Sensor_Data | YOLO_Match\n")
-            f.write("=" * 80 + "\n")
+        with open(log_file, "w", newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "timestamp",
+                "relative_time",
+                "pir_right",
+                "pir_middle",
+                "pir_left",
+                "ultrasonic",
+                "rfid",
+                "button",
+                "yolo_match",
+                "yolo_time",
+                "yolo_total",
+                "yolo_per_camera"
+            ])
     except Exception as e:
-        print(f"[Arduino] Failed to write log header: {e}")
+        print(f"[Arduino] Failed to write CSV header: {e}")
     
     # Main loop
     while not stop_event.is_set():
@@ -54,7 +66,7 @@ def loop(now, match_yolo, stop_event):
         try:
             # Check for data
             if not sensor_ser.in_waiting:
-                time.sleep(0.01)  # Small delay to prevent CPU spinning
+                time.sleep(0.01)  
                 continue
         except serial.SerialException as e:
             print(f"[Arduino] Serial port error: {e}")
@@ -67,12 +79,17 @@ def loop(now, match_yolo, stop_event):
             if not line:
                 continue
             
+            # Parse the Arduino message
+            sensor_data = parse_arduino_message(line)
+            if sensor_data is None:
+                continue
+            
             # Get timestamp and match with YOLO
             sensor_time = now()
             yolo_match = match_yolo(sensor_time)
             
             # Log the event with fusion data
-            log_event(line, sensor_time, yolo_match)
+            log_event(sensor_data, sensor_time, yolo_match)
             
         except UnicodeDecodeError as e:
             print(f"[Arduino] Decode error: {e}")
@@ -85,6 +102,53 @@ def loop(now, match_yolo, stop_event):
     print("[Arduino] Stopping sensor logging...")
     close_serial()
     print("[Arduino] Sensor logging stopped")
+
+###############################################################
+def parse_arduino_message(line):
+    """
+    Parse Arduino message format: <TYPE>VALUE>
+    Returns dict with sensor states or None if invalid
+    """
+    if not line.startswith('<') or not line.endswith('>'):
+        return None
+    
+    # Remove markers
+    content = line[1:-1]
+    if len(content) < 1:
+        return None
+    
+    msg_type = content[0]
+    value = content[1:] if len(content) > 1 else ""
+    
+    sensor_data = {
+        'pir_right': 0,
+        'pir_middle': 0,
+        'pir_left': 0,
+        'ultrasonic': 0,
+        'rfid': 0,
+        'button': 0
+    }
+    
+    # Parse based on message type
+    if msg_type == 'R':  # Right PIR
+        sensor_data['pir_right'] = int(value) if value.isdigit() else 0
+    elif msg_type == 'M':  # Middle PIR
+        sensor_data['pir_middle'] = int(value) if value.isdigit() else 0
+    elif msg_type == 'L':  # Left PIR
+        sensor_data['pir_left'] = int(value) if value.isdigit() else 0
+    elif msg_type == 'U':  # Ultrasonic
+        sensor_data['ultrasonic'] = int(value) if value.isdigit() else 0
+    elif msg_type == 'F':  # RFID
+        sensor_data['rfid'] = 1
+    elif msg_type == 'B':  # Button
+        sensor_data['button'] = int(value) if value.isdigit() else 0
+    elif msg_type == 'P':  # Generic PIR (legacy)
+        sensor_data['pir_middle'] = int(value) if value.isdigit() else 0
+    else:
+        print(f"[Arduino] Unknown message type: {msg_type}")
+        return None
+    
+    return sensor_data
 
 ###############################################################
 def serial_init():
@@ -118,28 +182,42 @@ def close_serial():
             sensor_ser = None
 
 ###############################################################
-def log_event(line, sensor_time, yolo_match):
+def log_event(sensor_data, sensor_time, yolo_match):
     """
-    Log sensor event with YOLO fusion data.
+    Log sensor event with YOLO fusion data to CSV.
     """
-    timestamp = time.strftime("[%Y-%m-%d %H:%M:%S]")
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     
-    # Format YOLO match info
+    # Extract YOLO match info
     if yolo_match:
-        yolo_info = (
-            f"YOLO[t={yolo_match['time']:.3f}, "
-            f"total={yolo_match['total']}, "
-            f"cams={yolo_match['per_camera']}]"
-        )
+        yolo_matched = "yes"
+        yolo_time = f"{yolo_match['time']:.3f}"
+        yolo_total = yolo_match['total']
+        yolo_per_camera = str(yolo_match['per_camera'])
     else:
-        yolo_info = "YOLO[no_match]"
+        yolo_matched = "no"
+        yolo_time = ""
+        yolo_total = ""
+        yolo_per_camera = ""
     
-    # Create log entry
-    log_entry = f"{timestamp} t={sensor_time:.3f} | {line} | {yolo_info}\n"
-    
+    # Write to CSV
     try:
-        with open(log_file, "a") as f:
-            f.write(log_entry)
+        with open(log_file, "a", newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                timestamp,
+                f"{sensor_time:.3f}",
+                sensor_data['pir_right'],
+                sensor_data['pir_middle'],
+                sensor_data['pir_left'],
+                sensor_data['ultrasonic'],
+                sensor_data['rfid'],
+                sensor_data['button'],
+                yolo_matched,
+                yolo_time,
+                yolo_total,
+                yolo_per_camera
+            ])
     except Exception as e:
         print(f"[Arduino] Logging error: {e}")
 
@@ -153,6 +231,27 @@ def main():
     
     print(f"Logging to: {log_file}")
     print("Press Ctrl+C to stop")
+    
+    # Write CSV header for standalone mode
+    try:
+        with open(log_file, "w", newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "timestamp",
+                "relative_time",
+                "pir_right",
+                "pir_middle",
+                "pir_left",
+                "ultrasonic",
+                "rfid",
+                "button",
+                "yolo_match",
+                "yolo_time",
+                "yolo_total",
+                "yolo_per_camera"
+            ])
+    except Exception as e:
+        print(f"Failed to write CSV header: {e}")
     
     try:
         while True:
@@ -168,7 +267,9 @@ def main():
                 
                 line = sensor_ser.readline().decode('utf-8').strip()
                 if line:
-                    log_event(line, time.time(), None)
+                    sensor_data = parse_arduino_message(line)
+                    if sensor_data:
+                        log_event(sensor_data, time.time(), None)
                     
             except Exception as e:
                 print(f"Error: {e}")

@@ -16,13 +16,13 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
     MODEL_PATH = "yolov8n.pt"
     CONF_THRESHOLD = 0.7
     CAMERA_INDICES = [1, 2]
-    OUTPUT_DIR = "videos"
+    OUTPUT_DIR = "../videos_outputs"
     OUTPUT_CSV = "multi_camera_detections.csv"
 
     FRAME_WIDTH = 640
     FRAME_HEIGHT = 480
     FPS = 30
-    IMG_SIZE = 320
+    IMG_SIZE = 250
 
     DRAW = True          # Turn off to gain speed
     CSV_BUFFER_SIZE = 30 # Write CSV every N frames

@@ -3,7 +3,7 @@ import time
 from collections import deque
 
 import non_stitch
-import logging2
+import mock as logging2
 
 
 # ============================
@@ -17,7 +17,7 @@ def now():
 
 
 YOLO_BUFFER = deque(maxlen=100)   # ~3 seconds at 30 FPS
-FUSION_WINDOW = 0.1               # 100 ms
+FUSION_WINDOW = 0.05               # 50 ms
 
 yolo_ready = threading.Event()
 stop_event = threading.Event()
@@ -71,11 +71,6 @@ def start_arduino():
     """Run Arduino sensor logging in separate thread"""
     print("[SYSTEM] Waiting for YOLO to be ready...")
     
-    # Add timeout to prevent hanging forever
-    if not yolo_ready.wait(timeout=30):
-        print("[ERROR] YOLO failed to initialize within 30 seconds")
-        stop_event.set()
-        return
     
     print("[SYSTEM] Starting Arduino thread...")
     
