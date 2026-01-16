@@ -3,7 +3,7 @@ import time
 from collections import deque
 
 import non_stitch
-import mock as logging2
+import log
 
 
 # ============================
@@ -35,9 +35,8 @@ def match_yolo(sensor_time):
     best = None
     best_dt = float("inf")
 
-    # Iterate in reverse (newest first)
     for ev in reversed(YOLO_BUFFER):
-        dt = abs(sensor_time - ev["time"]) 
+        dt = abs(sensor_time - ev["time"])
         if dt <= FUSION_WINDOW and dt < best_dt:
             best = ev
             best_dt = dt
@@ -70,12 +69,12 @@ def start_yolo():
 def start_arduino():
     """Run Arduino sensor logging in separate thread"""
     print("[SYSTEM] Waiting for YOLO to be ready...")
-    
-    
+   
+   
     print("[SYSTEM] Starting Arduino thread...")
-    
+   
     try:
-        logging2.loop(
+        log.loop(
             now=now,
             match_yolo=match_yolo,
             stop_event=stop_event
@@ -114,5 +113,7 @@ if __name__ == "__main__":
     # Check if threads are still alive
     if t1.is_alive() or t2.is_alive():
         print("[WARNING] Some threads did not stop gracefully")
-    
+   
     print("[SYSTEM] Clean shutdown.")
+    
+    
