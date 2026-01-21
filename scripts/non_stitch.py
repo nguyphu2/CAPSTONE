@@ -15,14 +15,14 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
     # =============================
     MODEL_PATH = "yolov8n.pt"
     CONF_THRESHOLD = 0.7
-    CAMERA_INDICES = [1, 2]
+    CAMERA_INDICES = [0, 1]
     OUTPUT_DIR = "../videos_outputs"
     OUTPUT_CSV = "multi_camera_detections.csv"
 
     FRAME_WIDTH = 640
     FRAME_HEIGHT = 480
     FPS = 30
-    IMG_SIZE = 250
+    IMG_SIZE = 224
 
     DRAW = True          # Turn off to gain speed
     CSV_BUFFER_SIZE = 30 # Write CSV every N frames
@@ -70,7 +70,7 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
 
     header = ["Timestamp", "SystemTime"]
     for i in range(len(CAMERA_INDICES)):
-        header += [f"Cam{i}_Count", f"Cam{i}_Detection"]
+        header += [f"Cam{i}_Count", f"Cam{i}_Detection", f"Cam{i}_BoxAreas"]
     header.append("Total_Count")
     csv_writer.writerow(header)
 
@@ -101,6 +101,7 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
             # Initialize outputs
             per_camera_counts = [0] * len(caps)
             per_camera_detection = [False] * len(caps)
+            per_camera_box_areas = [[] for _ in range(len(caps))]
 
             # -----------------------------
             # YOLO batch inference
@@ -124,8 +125,17 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
                     per_camera_counts[cam_idx] = count
                     per_camera_detection[cam_idx] = count > 0
 
+                    # Calculate box areas for detected persons
+                    box_areas = []
+                    for (x1, y1, x2, y2) in xyxy[mask]:
+                        width = x2 - x1
+                        height = y2 - y1
+                        area = width * height
+                        box_areas.append(int(area))
+                    
+                    per_camera_box_areas[cam_idx] = box_areas
+
                     if DRAW and count > 0:
-                        # Fixed: use the correct frame from the batch
                         annotated = frames[batch_idx]
 
                         for (x1, y1, x2, y2), c in zip(xyxy[mask], conf[mask]):
@@ -153,11 +163,10 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
             
             yolo_buffer.append(yolo_event)
 
-            # Fixed: Correctly iterate over captured frames
+            # Iterate over captured frames
             for batch_idx, cam_idx in enumerate(frame_map):
                 frame = frames[batch_idx]
                 if DRAW:
-                    # Fixed: Convert timestamp to string
                     cv2.putText(
                         frame,
                         f"{timestamp:.3f}",
@@ -172,8 +181,10 @@ def run(now, yolo_buffer, yolo_ready, stop_event):
                 writers[cam_idx].write(frame)
 
             row = [timestamp, time.time()]
-            for count, detected in zip(per_camera_counts, per_camera_detection):
-                row += [count, detected]
+            for count, detected, box_areas in zip(per_camera_counts, per_camera_detection, per_camera_box_areas):
+                # Convert box_areas list to string format
+                areas_str = ";".join(map(str, box_areas)) if box_areas else ""
+                row += [count, detected, areas_str]
             row.append(total_people)
             
             csv_buffer.append(row)
