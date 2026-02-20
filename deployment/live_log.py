@@ -126,7 +126,7 @@ def read_sensor_and_predict():
         model_input = {feat: sensor_data[feat] for feat in FEATURES}
         prediction, probability = predict(model_input)
         
-        status = "🚨 PERSON DETECTED" if prediction == 1 else "✓ No person"
+        status = "PERSON DETECTED" if prediction == 1 else "No person"
         print(f"[PREDICTION] {status} (confidence: {probability:.2%})")
         
         return line, prediction, probability
@@ -162,9 +162,7 @@ def log_event(line, prediction=None, probability=None, yolo_match=None):
     except Exception as e:
         print(f"[LOGGER] LOGGING ERROR: {e}")
 
-# =========================
-# MAIN LOOP (THREADED MODE)
-# =========================
+
 def loop(now, match_yolo, stop_event):
     """Main loop for threaded execution with predictions"""
     global sensor_ser
@@ -183,7 +181,6 @@ def loop(now, match_yolo, stop_event):
 
     last_heartbeat = time.time()
     
-    # Statistics
     total_predictions = 0
     person_detected_count = 0
 
@@ -200,10 +197,8 @@ def loop(now, match_yolo, stop_event):
                 if prediction == 1:
                     person_detected_count += 1
                     
-                    # 🔴 TAKE ACTION WHEN PERSON DETECTED
-                    # Add your actions here
+                    # Add actions here
 
-        # 🫀 HEARTBEAT
         if time.time() - last_heartbeat >= 5.0:
             if total_predictions > 0:
                 detection_rate = (person_detected_count / total_predictions) * 100
